@@ -8,6 +8,7 @@ using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using BeatArenhax.Audio;
 using BeatArenhax.CustomSongs;
+using BeatArenhax.Images;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -56,6 +57,7 @@ namespace BeatArenhax
                     Library.Scan(songRoot, Settings, idsPath);
                     foreach (string warning in Library.Warnings) L.LogWarning(warning);
                     L.LogInfo($"Found {Library.Songs.Count} DTX songs in {sw.ElapsedMilliseconds} ms");
+                    if (Settings.BackgroundJacketDecoding) JacketPreloader.Start(Library.Songs);
                 }
                 catch (Exception e) { L.LogError("Scan failed: " + e); }
             });

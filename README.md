@@ -22,20 +22,21 @@ custom song with any of the other instruments will load a default chart instead.
 - Skip the "caution with the controllers..." popups. Not recommended, this make
   you drop in the lobby before it loads, making object pop and flash, which is a
   bit uncomfortable to see in VR. So I recommend not using this patch.
-- Skip the "wave to your partners before starting" ceremony. It's cute and funny
-  the first times you do it, I definitely recommend playing the game unmodded
-  for your first few songs so you can experience it. But after a while having to
-  wave to NPCs feel a bit uncanny.
-- Skip the "send your impression to the members" phase after a song, so you can
-  see your score immediately. Normally you have to wait either 12 seconds, or
-  pick emotes ("kawaii", "exciting", ...) for each of your partners before your
-  score appears.
 - Force unlock avatar parts
 - Force unlock campaign rewards
+- Hide buttons that only work online ("Members search", "Following")
 - Change player name
+- Customize song wheel size and position, useful now that the game has more than
+  40 songs
+- Display the song wheel in front of you instead of around you
+- Remember song wheel position
+- Start song previews by touching their jackets, rather than having to select them
 - Change audio volume for BGM and drums separately
 - Change WASAPI buffer latency
 - Change offset
+- Performance improvements for loading the lobby, with 1200+ custom songs some problems became apparent
+  - Defer PNG decoding to a background thread
+  - Lazy load song wheel objects
 
 ## How to install
 
@@ -55,6 +56,7 @@ Since the game only has "Casual" and "Advanced" difficulties, only 2 charts per
 set are loaded. Regular DTX sets support up to 5 difficulties. The setting
 `CustomSongs.DifficultiesCut` supports the values "easiest" and "hardest". This
 way you can either pick the 2 bottom difficulties, or the 2 top difficulties.
+If a set has only one DTX chart, Casual and Advanced use the same chart.
 
 ### Linux / Steam Frame / Proton
 

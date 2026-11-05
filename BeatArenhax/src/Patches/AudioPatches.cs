@@ -11,7 +11,7 @@ namespace BeatArenhax
         private const string FakeFollower = "dtxfollow";
         private const string FakePreview = "dtxprev";
         private const string FakeChip = "dtxchip";
-        private const string PreviewPrefix = "dtxprev:";
+        internal const string PreviewPrefix = "dtxprev:";
 
         internal static string PreviewCue(int musicId) => PreviewPrefix + musicId;
 
@@ -33,6 +33,7 @@ namespace BeatArenhax
 
         internal static void StopAllCustomAudio()
         {
+            SongWheelTouchPatches.Forget();
             if (Plugin.Audio == null) return;
             Plugin.Audio.Mixer.StopSong();
             Plugin.Audio.StopPreview();
@@ -65,6 +66,12 @@ namespace BeatArenhax
 
         private static bool PlayBgm_Pre(string cueName, float volume, SoundPlayerDelegate startCallback, ref PlayInfo __result)
         {
+            if (SongWheelTouchPatches.TryHandOver(cueName, out PlayInfo touchPreview))
+            {
+                __result = touchPreview;
+                Started(startCallback);
+                return false;
+            }
             if (cueName == null || Plugin.Audio == null || !(cueName.StartsWith("dtx", StringComparison.Ordinal) || cueName == SongDataPatches.TemplateCue + "_bg"))
                 return true;
             try

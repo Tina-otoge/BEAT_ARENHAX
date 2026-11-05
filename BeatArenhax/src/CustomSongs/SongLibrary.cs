@@ -36,7 +36,6 @@ namespace BeatArenhax.CustomSongs
         public List<CustomSongChart> Charts = [];
         public CustomSongChart CasualChart;
         public CustomSongChart AdvancedChart;
-        public bool CasualIsDerived;
         public int CasualLevel;
         public int AdvancedLevel;
         public string PreviewPath;
@@ -59,7 +58,7 @@ namespace BeatArenhax.CustomSongs
                 DtxChart adv = LoadDtxNoLock(true);
                 DtxChart casual = CasualChart.Path == AdvancedChart.Path ? adv : LoadDtxNoLock(false);
                 ConvertedChart a = conv.Prepare(adv, false);
-                ConvertedChart c = conv.Prepare(casual, CasualIsDerived);
+                ConvertedChart c = conv.Prepare(casual, true);
                 Dictionary<int, int> map = GameParamWriter.AssignNotes([a.Notes, c.Notes]);
                 ChartConverter.Finish(a, map);
                 ChartConverter.Finish(c, map);
@@ -208,11 +207,8 @@ namespace BeatArenhax.CustomSongs
 
             song.CasualChart = Pick(song.Charts, settings.DifficultiesCut, false);
             song.AdvancedChart = Pick(song.Charts, settings.DifficultiesCut, true);
-            song.CasualIsDerived = song.CasualChart == song.AdvancedChart;
             song.AdvancedLevel = ChartConverter.ToGameLevel(song.AdvancedChart.DLevel);
-            song.CasualLevel = song.CasualIsDerived
-                ? Math.Max(1, song.AdvancedLevel - 2)
-                : Math.Min(song.AdvancedLevel, ChartConverter.ToGameLevel(song.CasualChart.DLevel));
+            song.CasualLevel = Math.Min(song.AdvancedLevel, ChartConverter.ToGameLevel(song.CasualChart.DLevel));
             return song;
         }
 

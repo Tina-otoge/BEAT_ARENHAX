@@ -96,7 +96,7 @@ internal class Program
                     File.WriteAllBytes(baseName + "_dr0.mid", conv.Casual.Midi);
                     File.WriteAllText(baseName + "_param.json", conv.ParamJson);
                     Console.WriteLine($"[{song.Id}] {song.Title} / {song.Artist}  Advanced L{song.AdvancedLevel} ({song.AdvancedChart.DLevel}) {conv.Advanced.PlayableCount}+{conv.Advanced.AutoCount}auto, " +
-                        $"Casual L{song.CasualLevel} {(song.CasualIsDerived ? "derived" : "dtx")} {conv.Casual.PlayableCount}+{conv.Casual.AutoCount}auto, len {conv.Advanced.LengthMs / 1000:0.0}s, sched {conv.Advanced.Schedule.Count} -> {baseName}");
+                        $"Casual L{song.CasualLevel} dtx {conv.Casual.PlayableCount}+{conv.Casual.AutoCount}auto, len {conv.Advanced.LengthMs / 1000:0.0}s, sched {conv.Advanced.Schedule.Count} -> {baseName}");
                 }
                 idx++;
                 song.ReleaseConverted();
@@ -207,13 +207,28 @@ internal class Program
 
         foreach (Settings settings in new[] { new Settings(), defaults, Settings.LoadOrCreate(settingsPath) })
         {
-            if (settings.MinNoteGapMs != 0 || settings.CasualOnlyEighthNotes || settings.CasualMinNoteGapMs != 0)
+            if (settings.MinNoteGapMs != 0 || settings.CasualMinNoteGapMs != 0 || settings.CasualOnlyEighthNotes)
                 throw new InvalidOperationException("Note filtering defaults self-test failed");
         }
         File.WriteAllText(settingsPath, "[Charts]\nMinNoteGapMs=99\n");
         Settings missingSettings = Settings.LoadOrCreate(settingsPath);
-        if (missingSettings.MinNoteGapMs != 0 || missingSettings.CasualOnlyEighthNotes || missingSettings.CasualMinNoteGapMs != 0)
+        if (missingSettings.MinNoteGapMs != 0 || missingSettings.CasualMinNoteGapMs != 0 || missingSettings.CasualOnlyEighthNotes)
             throw new InvalidOperationException("Settings in unrelated sections should be ignored");
+
+        File.WriteAllText(settingsPath, "[SongSelect]\nSongWheelDistanceScale=1.75\n");
+        if (Settings.LoadOrCreate(settingsPath).SongWheelDistanceScale != 1.75f
+            || defaults.SongWheelDistanceScale != 1.5f)
+            throw new InvalidOperationException("Song wheel distance scale parsing/default self-test failed");
+
+        foreach ((int Value, int Expected) in new[] { (300, 300), (750, 750), (100, 300), (6000, 5000) })
+        {
+            File.WriteAllText(settingsPath, $"[SongSelect]\nSongWheelTouchSelectTimeMs={Value}\n");
+            Settings loaded = Settings.LoadOrCreate(settingsPath);
+            if (loaded.SongWheelTouchSelectTimeMs != Expected
+                || defaults.SongWheelTouchSelectTimeMs != 600
+                || Math.Abs((loaded.SongWheelTouchSelectTimeMs / 1000f) - (Expected / 1000.0)) > 0.000001)
+                throw new InvalidOperationException("Song wheel touch time parsing/units self-test failed");
+        }
 
         foreach (ChartDifficultyCut cut in Enum.GetValues<ChartDifficultyCut>())
         {
@@ -224,7 +239,7 @@ internal class Program
                 + "[Game]\nPlayerName=SectionTest\n");
             Settings loaded = Settings.LoadOrCreate(settingsPath);
             if (loaded.DifficultiesCut != cut
-                || loaded.MinNoteGapMs != 45 || !loaded.CasualOnlyEighthNotes || loaded.CasualMinNoteGapMs != 234
+                || loaded.MinNoteGapMs != 45 || loaded.CasualMinNoteGapMs != 234 || !loaded.CasualOnlyEighthNotes
                 || loaded.MasterVolume != 2 || loaded.PlayerName != "SectionTest")
                 throw new InvalidOperationException("Difficulty INI parsing self-test failed: " + cut);
         }
@@ -280,8 +295,7 @@ internal class Program
                 if (library.Warnings.Count != 0 || library.Songs.Count != 1)
                     throw new InvalidOperationException("Difficulty fixture scan failed: " + string.Join("; ", library.Warnings));
                 CustomSong song = library.Songs[0];
-                if (song.CasualChart.SetIndex != ExpectedCasual || song.AdvancedChart.SetIndex != ExpectedAdvanced
-                    || song.CasualIsDerived != (ExpectedCasual == ExpectedAdvanced))
+                if (song.CasualChart.SetIndex != ExpectedCasual || song.AdvancedChart.SetIndex != ExpectedAdvanced)
                     throw new InvalidOperationException($"Difficulty selection failed: available={string.Join(",", Available)}, "
                         + $"cut={Cut}; got {song.CasualChart.SetIndex}/{song.AdvancedChart.SetIndex} "
                         + $"with levels {string.Join(",", song.Charts.Select(chart => $"{chart.SetIndex}:{chart.DLevel}"))}");
@@ -294,14 +308,55 @@ internal class Program
                     || converted.Casual.PlayableCount != 2)
                     throw new InvalidOperationException($"Casual/Advanced conversion self-test failed: cut={Cut}, "
                         + $"charts={song.CasualChart.SetIndex}/{song.AdvancedChart.SetIndex}, "
-                        + $"derived={song.CasualIsDerived}, converted={converted.Casual.PlayableCount}/{converted.Advanced.PlayableCount}");
+                        + $"converted={converted.Casual.PlayableCount}/{converted.Advanced.PlayableCount}");
                 song.ReleaseConverted();
-                settings.CasualOnlyEighthNotes = true;
-                settings.CasualMinNoteGapMs = 120;
+                settings.MinNoteGapMs = 234;
                 ConvertedSong filtered = song.GetConverted(settings, file => 0);
-                if (filtered.Casual.PlayableCount != (song.CasualIsDerived ? 1 : 2))
-                    throw new InvalidOperationException("Casual opt-in filtering self-test failed");
+                if (filtered.Casual.PlayableCount != 1 || filtered.Advanced.PlayableCount != 1)
+                    throw new InvalidOperationException("Shared note filtering self-test failed");
                 song.ReleaseConverted();
+                settings.MinNoteGapMs = 0;
+                foreach ((bool Eighths, int Gap) in new[] { (true, 0), (false, 234), (true, 234) })
+                {
+                    settings.CasualOnlyEighthNotes = Eighths;
+                    settings.CasualMinNoteGapMs = Gap;
+                    ConvertedSong casualFiltered = song.GetConverted(settings, file => 0);
+                    if (casualFiltered.Casual.PlayableCount != 1 || casualFiltered.Advanced.PlayableCount != 2
+                        || casualFiltered.Casual.AutoCount != converted.Casual.AutoCount + 1
+                        || !casualFiltered.Advanced.Midi.SequenceEqual(converted.Advanced.Midi)
+                        || !casualFiltered.Advanced.Schedule.SequenceEqual(converted.Advanced.Schedule))
+                        throw new InvalidOperationException($"Casual-only filtering self-test failed: cut={Cut}, eighths={Eighths}, gap={Gap}");
+                    song.ReleaseConverted();
+                }
+                settings.CasualOnlyEighthNotes = false;
+                settings.CasualMinNoteGapMs = 1;
+                settings.MinNoteGapMs = 234;
+                ConvertedSong combined = song.GetConverted(settings, file => 0);
+                if (combined.Casual.PlayableCount != 1 || combined.Advanced.PlayableCount != 1)
+                    throw new InvalidOperationException("Casual gap must not override a larger global gap");
+                song.ReleaseConverted();
+            }
+
+            File.WriteAllText(Path.Combine(folder, "chart1.dtx"),
+                "#TITLE Single chart test\n#DLEVEL 80\n#BPM 120\n"
+                + "#WAV01 hit.wav\n#00012:01010000000000000000000000000000\n"
+                + "#00011:01010000000000000000000000000000\n");
+            File.WriteAllText(Path.Combine(folder, "set.def"), "#TITLE Single chart test\n#L1FILE: chart1.dtx\n");
+            foreach (ChartDifficultyCut cut in Enum.GetValues<ChartDifficultyCut>())
+            {
+                File.WriteAllText(settingsPath, $"[CustomSongs]\nDifficultiesCut={cut.ToString().ToLowerInvariant()}\n");
+                Settings settings = Settings.LoadOrCreate(settingsPath);
+                SongLibrary library = new();
+                library.Scan(folder, settings, Path.Combine(folder, "ids.txt"));
+                CustomSong song = library.Songs.Single();
+                ConvertedSong converted = song.GetConverted(settings, file => 0);
+                if (song.CasualChart != song.AdvancedChart || song.CasualLevel != song.AdvancedLevel
+                    || song.CasualLevel != ChartConverter.ToGameLevel(80)
+                    || converted.Casual.PlayableCount != 4 || converted.Advanced.PlayableCount != 4
+                    || !converted.Casual.Midi.SequenceEqual(converted.Advanced.Midi)
+                    || !converted.Casual.Schedule.SequenceEqual(converted.Advanced.Schedule)
+                    || converted.Casual.GameLevel != converted.Advanced.GameLevel)
+                    throw new InvalidOperationException("Single-chart equivalence self-test failed: " + cut);
             }
 
             for (int index = 1; index <= 4; index++)

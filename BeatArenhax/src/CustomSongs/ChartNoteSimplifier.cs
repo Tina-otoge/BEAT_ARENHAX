@@ -17,8 +17,8 @@ namespace BeatArenhax.CustomSongs
                 {
                     if (!note.Playable) continue;
                     double eighths = note.BeatInMeasure * 2;
-                    if (!(Math.Abs(eighths - Math.Round(eighths)) > 0.02)) continue;
-                    note.Playable = false;
+                    if (Math.Abs(eighths - Math.Round(eighths)) > 0.02)
+                        note.Playable = false;
                 }
             }
 
@@ -49,7 +49,7 @@ namespace BeatArenhax.CustomSongs
                             continue;
                         }
                     }
-                    if (kept >= maxHits || (casual && kept >= 1 && note.Lane == GameLane.HH))
+                    if (kept >= maxHits)
                     {
                         note.Playable = false;
                         continue;

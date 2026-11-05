@@ -17,16 +17,24 @@ namespace BeatArenhax
             SongDataPatches.Apply(h);
             AudioPatches.Apply(h);
             SongSelectPatches.Apply(h);
+            SongWheelTouchPatches.Apply(h);
+            OfflineUIPatches.Apply(h);
+            ArtworkPatches.Apply(h);
+            SongWheelLazyPatches.Apply(h);
+            PlayerInfoPatches.Apply(h);
         }
 
-        internal static void Patch(Harmony h, Type owner, Type targetType, string method, string prefix, string postfix = null)
+        // Finalizers run even when the original throws; use them to reset state set by a prefix.
+        internal static void Patch(Harmony h, Type owner, Type targetType, string method, string prefix, string postfix = null, string finalizer = null)
         {
             try
             {
                 MethodInfo target = AccessTools.Method(targetType, method) ?? throw new MissingMethodException(targetType.Name, method);
                 _ = h.Patch(target,
-                    prefix != null ? new HarmonyMethod(owner, prefix) : null,
-                    postfix != null ? new HarmonyMethod(owner, postfix) : null);
+                    prefix: prefix != null ? new HarmonyMethod(owner, prefix) : null,
+                    postfix: postfix != null ? new HarmonyMethod(owner, postfix) : null,
+                    finalizer: finalizer != null ? new HarmonyMethod(owner, finalizer) : null,
+                    ilmanipulator: null);
             }
             catch (Exception e)
             {

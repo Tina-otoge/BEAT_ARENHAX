@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\BeatArenhax\src\**\*.cs"
-      Exclude="..\BeatArenhax\src\Patches\**\*.cs;..\BeatArenhax\src\Plugin.cs" />
+      Exclude="..\BeatArenhax\src\Patches\**\*.cs;..\BeatArenhax\src\Images\**\*.cs;..\BeatArenhax\src\Plugin.cs" />
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="NVorbis" Version="0.10.5" />

@@ -12,3 +12,7 @@ csharp_style_expression_bodied_methods = true
 csharp_style_prefer_switch_expression = true
 dotnet_style_prefer_conditional_expression_over_return = true
 dotnet_style_prefer_conditional_expression_over_assignment = true
+
+[BeatArenhax/src/Patches/*.cs]
+# Unity's destroyed-object null checks must not become null propagation.
+dotnet_diagnostic.IDE0031.severity = none

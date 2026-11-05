@@ -20,9 +20,9 @@ namespace BeatArenhax
         public ChartDifficultyCut DifficultiesCut = ChartDifficultyCut.Easiest;
         public int MaxSimultaneousHits = 2;
         public int MinNoteGapMs = 0;
-        public bool RideOnRightCymbal = true;
-        public bool CasualOnlyEighthNotes = false;
         public int CasualMinNoteGapMs = 0;
+        public bool CasualOnlyEighthNotes = false;
+        public bool RideOnRightCymbal = true;
         public int MinimumTimeBeforeFirstNoteMs = 2500;
         public float MasterVolume = 1.0f;
         public float BgmVolume = 1.0f;
@@ -33,11 +33,24 @@ namespace BeatArenhax
         public bool AutoOfflineMode = true;
         public bool SkipTitleScreen = true;
         public bool SkipCautionScreen = false;
-        public bool SkipPostGameGesture = true;
-        public bool SkipPreGameGesture = true;
+        public bool SkipPostGameGesture = false;
+        public bool SkipPreGameGesture = false;
         public bool UnlockAllAvatarParts = true;
         public bool UnlockCampaignRewards = false;
+        public bool HideButtonsUnavailableOffline = true;
         public string PlayerName = "Player";
+        public int SongWheelColumns = 5;
+        public float SongWheelRadiusScale = 1.0f;
+        public float SongWheelDistanceScale = 1.5f;
+        public bool SongWheelForwardOnly = true;
+        public float SongWheelForwardArc = 120f;
+        public bool SongWheelRememberPosition = true;
+        public bool SongWheelPlayPreviewByTouching = true;
+        public int SongWheelTouchSelectTimeMs = 600;
+        public bool LazySongWheel = true;
+        public bool BackgroundJacketDecoding = true;
+        public bool PlayerInfoOnlyPlayedCustomSongs = true;
+        public bool PlayerInfoHideCustomSongs = false;
 
         internal static readonly string DefaultIni = string.Join(Environment.NewLine,
         [
@@ -59,12 +72,12 @@ namespace BeatArenhax
             "MaxSimultaneousHits=2",
             "; Notes on the same pad closer than this are played automatically instead.",
             "MinNoteGapMs=0",
-            "; Same but only for Casual charts",
+            "; Minimum same-pad gap for every Casual chart; the larger of this and MinNoteGapMs is used.",
             "CasualMinNoteGapMs=0",
+            "; Keep only eighth-note grid hits in every Casual chart; other hits play automatically.",
+            "CasualOnlyEighthNotes=false",
             "; Ride cymbal goes to the right cymbal pad (false = played automatically)",
             "RideOnRightCymbal=true",
-            "; Keep only 8ths in Casual charts",
-            "CasualOnlyEighthNotes=false",
             "",
             "MinimumTimeBeforeFirstNoteMs=2500",
             "",
@@ -88,16 +101,59 @@ namespace BeatArenhax
             "; NOT RECOMMENDED: This will drop you in the lobby instantly, before objects are properly initialized. You will see flashing objects as they load. Jarring in VR.",
             "SkipCautionScreen=0",
             "; Skip the 'make a gesture to each member and start playing' wait before a song.",
-            "SkipPreGameGesture=1",
+            "SkipPreGameGesture=0",
             "; Skip the 'send your impression to the members' countdown after a song and go straight to the score.",
-            "SkipPostGameGesture=1",
+            "SkipPostGameGesture=0",
             "; Unlock every avatar part, like the online service did (its 'unlock all parts' flag never arrives offline).",
             "UnlockAllAvatarParts=1",
             "; Also unlock all campaign rewards (feelings/stamps and reward parts) without clearing campaigns.",
             "UnlockCampaignRewards=0",
+            "; Hide buttons that only work online (\"Members search\" on the song panel, \"Following\" in the left-stick menu).",
+            "HideButtonsUnavailableOffline=1",
             "; Name shown in game (score boards, replays). Leave empty to use the game's own name.",
             "PlayerName=Player",
             "; PlayerName=",
+            "",
+            "[SongSelect]",
+            "; Display songs in front of you instead of all around",
+            "; This disables left/right scrolling, only up/down remains",
+            "SongWheelForwardOnly=1",
+            "; Width of the arc in degrees when using ForwardOnly",
+            "; 180 degrees is a semicircle, 360 degrees is a full circle",
+            "SongWheelForwardArc=120",
+            "; Reopen the song wheel where you left it instead of at the first row",
+            "SongWheelRememberPosition=1",
+            "; Songs per row of the song wheel",
+            "; Game default is 9",
+            "; When using SongWheelForwardOnly, 5 is recommended",
+            "SongWheelColumns=5",
+            "; SongWheelColumns=9",
+            "; Song wheel size multiplier (1 = vanilla, 0.7 m, max = 2)",
+            "; SongWheelRadiusScale x SongWheelDistanceScale is capped at 2 (plates within 1.4 m)",
+            "SongWheelRadiusScale=1",
+            "; Distance multiplier of song wheel from your head",
+            "SongWheelDistanceScale=1.5",
+            "; Play song previews by briefly touching its jacket, instead of having to select the song",
+            "SongWheelPlayPreviewByTouching=1",
+            "; Change the time needed to select a song, otherwise PlayPreviewByTouching is very hard",
+            "; to trigger without accidentally selecting the song",
+            "; Game default = 300 ms",
+            "SongWheelTouchSelectTimeMs=600",
+            "; SongWheelTouchSelectTimeMs=300",
+            "",
+            "[Performance]",
+            "; Load song wheel objects when they come into view instead of on scene load",
+            "; For 1200 songs, improved load times from 32s to 1s",
+            "LazySongWheel=1",
+            "; Decode PNG jackets on background threads at startup",
+            "; For 1200 songs, improved load times from 7.7s to 1s",
+            "BackgroundJacketDecoding=1",
+            "; In the Player Info menu, you can see a list of all songs in the game and your",
+            "; score on it. This option hides custom songs you haven't played yet from this list.",
+            "; The load time for 1200 entries is 20s",
+            "PlayerInfoOnlyPlayedCustomSongs=1",
+            "; Hide all custom songs from the Player Info menu.",
+            "PlayerInfoHideCustomSongs=0",
             "",
         ]) + Environment.NewLine;
 
@@ -153,9 +209,9 @@ namespace BeatArenhax
             s.DifficultiesCut = GetDifficultyCut("CustomSongs", "DifficultiesCut", s.DifficultiesCut);
             s.MaxSimultaneousHits = Math.Clamp(GetI("CustomSongs", "MaxSimultaneousHits", s.MaxSimultaneousHits), 1, 4);
             s.MinNoteGapMs = Math.Clamp(GetI("CustomSongs", "MinNoteGapMs", s.MinNoteGapMs), 0, 1000);
-            s.RideOnRightCymbal = GetB("CustomSongs", "RideOnRightCymbal", s.RideOnRightCymbal);
-            s.CasualOnlyEighthNotes = GetB("CustomSongs", "CasualOnlyEighthNotes", s.CasualOnlyEighthNotes);
             s.CasualMinNoteGapMs = Math.Clamp(GetI("CustomSongs", "CasualMinNoteGapMs", s.CasualMinNoteGapMs), 0, 2000);
+            s.CasualOnlyEighthNotes = GetB("CustomSongs", "CasualOnlyEighthNotes", s.CasualOnlyEighthNotes);
+            s.RideOnRightCymbal = GetB("CustomSongs", "RideOnRightCymbal", s.RideOnRightCymbal);
             s.MinimumTimeBeforeFirstNoteMs = Math.Clamp(GetI("CustomSongs", "MinimumTimeBeforeFirstNoteMs", s.MinimumTimeBeforeFirstNoteMs), 0, 10000);
             s.MasterVolume = Math.Clamp(GetF("Audio", "MasterVolume", s.MasterVolume), 0f, 4f);
             s.BgmVolume = Math.Clamp(GetF("Audio", "BgmVolume", s.BgmVolume), 0f, 4f);
@@ -170,8 +226,20 @@ namespace BeatArenhax
             s.SkipPreGameGesture = GetB("Game", "SkipPreGameGesture", s.SkipPreGameGesture);
             s.UnlockAllAvatarParts = GetB("Game", "UnlockAllAvatarParts", s.UnlockAllAvatarParts);
             s.UnlockCampaignRewards = GetB("Game", "UnlockCampaignRewards", s.UnlockCampaignRewards);
+            s.HideButtonsUnavailableOffline = GetB("Game", "HideButtonsUnavailableOffline", s.HideButtonsUnavailableOffline);
             s.PlayerName = configuration["Game:PlayerName"] ?? s.PlayerName;
-
+            s.SongWheelColumns = Math.Clamp(GetI("SongSelect", "SongWheelColumns", s.SongWheelColumns), 4, 60);
+            s.SongWheelRadiusScale = Math.Clamp(GetF("SongSelect", "SongWheelRadiusScale", s.SongWheelRadiusScale), 0.5f, 2f);
+            s.SongWheelDistanceScale = Math.Clamp(GetF("SongSelect", "SongWheelDistanceScale", s.SongWheelDistanceScale), 0.5f, 2f / s.SongWheelRadiusScale);
+            s.SongWheelForwardOnly = GetB("SongSelect", "SongWheelForwardOnly", s.SongWheelForwardOnly);
+            s.SongWheelForwardArc = Math.Clamp(GetF("SongSelect", "SongWheelForwardArc", s.SongWheelForwardArc), 30f, 360f);
+            s.SongWheelRememberPosition = GetB("SongSelect", "SongWheelRememberPosition", s.SongWheelRememberPosition);
+            s.SongWheelPlayPreviewByTouching = GetB("SongSelect", "SongWheelPlayPreviewByTouching", s.SongWheelPlayPreviewByTouching);
+            s.SongWheelTouchSelectTimeMs = Math.Clamp(GetI("SongSelect", "SongWheelTouchSelectTimeMs", s.SongWheelTouchSelectTimeMs), 300, 5000);
+            s.LazySongWheel = GetB("Performance", "LazySongWheel", s.LazySongWheel);
+            s.BackgroundJacketDecoding = GetB("Performance", "BackgroundJacketDecoding", s.BackgroundJacketDecoding);
+            s.PlayerInfoOnlyPlayedCustomSongs = GetB("Performance", "PlayerInfoOnlyPlayedCustomSongs", s.PlayerInfoOnlyPlayedCustomSongs);
+            s.PlayerInfoHideCustomSongs = GetB("Performance", "PlayerInfoHideCustomSongs", s.PlayerInfoHideCustomSongs);
             return s;
         }
 

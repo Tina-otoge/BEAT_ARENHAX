@@ -9,7 +9,6 @@ namespace BeatArenhax
 {
     internal static class SongDataPatches
     {
-        private static int _builtInSongCount;
         private static bool _injected;
         private static string _lastChartName;
         private static MusicInfo _templateInfo;
@@ -23,7 +22,18 @@ namespace BeatArenhax
             Patches.Patch(h, typeof(SongDataPatches), typeof(Bvr.Player), "SubmitScore", nameof(SubmitScore_Pre));
             Patches.Patch(h, typeof(SongDataPatches), typeof(TextAsset), "get_bytes", null, nameof(TextAsset_Bytes_Post));
             Patches.Patch(h, typeof(SongDataPatches), typeof(TextAsset), "get_text", null, nameof(TextAsset_Text_Post));
-            Patches.Patch(h, typeof(SongDataPatches), typeof(RoundMenu), nameof(RoundMenu.SetObjectList), nameof(SetObjectList_Pre));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(MusicInfoManager), nameof(MusicInfoManager.GetAllMusicListSize), null, nameof(GetAllMusicListSize_Post));
+        }
+
+        private static int _vanillaSongCount = -1;
+
+        // At startup DefaultReplayLoader loads and parses the default band replays of every song, one at a time.
+        // Custom songs share the template's cue, so it parsed the template's replays again for each of them (about
+        // 50 s with a thousand songs), while GetDefaultReplayID_Pre already sends them to the template's replays.
+        // Custom songs are at the end of the list, so the loader just doesn't see them.
+        private static void GetAllMusicListSize_Post(ref int __result)
+        {
+            if (_vanillaSongCount >= 0 && __result > _vanillaSongCount && DefaultReplayLoader.IsLoading) __result = _vanillaSongCount;
         }
 
         internal static void EnsureInjected()
@@ -62,6 +72,7 @@ namespace BeatArenhax
                     Plugin.Settings.TemplateSong = template.CueSheetName;
                 }
                 _templateInfo = template;
+                _vanillaSongCount = list.Count;
 
                 PlayerSlot guitarSlot = template.GetPlayerSlot(PlayType.Guitar);
                 PlayerSlot thirdSlot = template.GetPlayerSlot(template.ThirdPlayType);
@@ -95,7 +106,6 @@ namespace BeatArenhax
                     added++;
                 }
                 manager.RefreshActiveList();
-                _builtInSongCount = manager.GetMusicListSize() - added;
                 Plugin.L.LogInfo($"Added {added} custom songs to the music list (template '{template.CueSheetName}'), {manager.GetMusicListSize()} selectable");
                 _injected = true;
             }
@@ -151,15 +161,6 @@ namespace BeatArenhax
             if (song == null) return;
             try { __result = Plugin.Audio.GetConverted(song).ParamJson; }
             catch (Exception e) { Plugin.L.LogError("Param generation failed for " + song.Folder + ": " + e); }
-        }
-
-        private static void SetObjectList_Pre(Il2CppSystem.Collections.Generic.List<GameObject> objects, ref int lineSize)
-        {
-            if (objects == null || objects.Count <= 45 || _builtInSongCount <= 0) return;
-            int columns = _builtInSongCount >= 16 ? (_builtInSongCount + 4) / 5 : 8;
-            if (lineSize <= columns) return;
-            Plugin.L.LogInfo($"Song wheel: {objects.Count} songs, {lineSize} -> {columns} columns");
-            lineSize = columns;
         }
     }
 }
