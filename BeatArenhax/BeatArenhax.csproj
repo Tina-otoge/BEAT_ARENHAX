@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>BeatArenhax</AssemblyName>
+    <RootNamespace>BeatArenhax</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugType>embedded</DebugType>
+    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\..</GameDir>
+    <DeployGameDir Condition="'$(DeployGameDir)' == ''"></DeployGameDir>
+    <!-- Version shown in game; taken from the BEAT_ARENHAX_VERSION environment variable at build
+    time. -->
+    <BeatArenhaxVersion>$(BEAT_ARENHAX_VERSION)</BeatArenhaxVersion>
+    <BeatArenhaxVersion Condition="'$(BeatArenhaxVersion)' == ''">dev</BeatArenhaxVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
+    <PackageReference Include="NLayer" Version="1.16.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Ini" Version="6.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\interop\*.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <BuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</BuildInfoFile>
+      <_BaVersionEscaped>$(BeatArenhaxVersion.Replace('\', '\\').Replace('"', '\"'))</_BaVersionEscaped>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(BuildInfoFile)" Overwrite="true" WriteOnlyWhenDifferent="true"
+      Lines="namespace BeatArenhax { internal static class BuildInfo { public const string Version = &quot;$(_BaVersionEscaped)&quot;%3B } }" />
+    <ItemGroup>
+      <Compile Include="$(BuildInfoFile)" />
+      <FileWrites Include="$(BuildInfoFile)" />
+    </ItemGroup>
+  </Target>
+  <Target Name="Deploy">
+    <Error Condition="'$(DeployGameDir)' == ''"
+      Text="Set DeployGameDir to the BEAT ARENA install folder to deploy." />
+    <ItemGroup>
+      <DeployFiles
+        Include="$(OutDir)BeatArenhax.dll;$(OutDir)NAudio.Core.dll;$(OutDir)NAudio.Wasapi.dll;$(OutDir)NVorbis.dll;$(OutDir)NLayer.dll;$(OutDir)Microsoft.Extensions.*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)"
+      DestinationFolder="$(DeployGameDir)\BepInEx\plugins\BeatArenhax" />
+  </Target>
+</Project>
