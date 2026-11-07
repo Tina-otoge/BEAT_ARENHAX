@@ -82,6 +82,30 @@ namespace BeatArenhax
 
         internal static bool IsSongWheel(RoundMenu menu) => _songWheel != IntPtr.Zero && menu.Pointer == _songWheel;
 
+        internal static void RebuildSongWheel(RoundMenu menu, GameObject avatar, Il2CppSystem.Collections.Generic.List<GameObject> objects)
+        {
+            _savedRow = -1;
+            _savedAngles = null;
+            _buildingSongWheel = true;
+            try { menu.SetObjectList(avatar, objects, Plugin.Settings.SongWheelColumns, 0.45f); }
+            finally { _buildingSongWheel = false; }
+            // Native scrolling always accesses three visible rows, even for an empty or small filter.
+            while (menu.m_panelCenterList.Count < 3)
+            {
+                GameObject row = new("BeatArenhax_EmptyRow");
+                row.transform.SetParent(menu.m_MenuCenterObject.transform, false);
+                CanvasGroup group = row.AddComponent<CanvasGroup>();
+                menu.m_panelCenterList.Add(row.transform);
+                menu.m_panelCenterObjectList.Add(row);
+                menu.m_panelCanvasGroups.Add(group);
+                menu.m_panelCanvases.Add(new Il2CppSystem.Collections.Generic.List<Canvas>());
+                menu.m_panelColliders.Add(new Il2CppSystem.Collections.Generic.List<Collider>());
+                menu.m_panelCenterSpeedOfsts.Add(0f);
+                menu.m_panelCenterAngle.Add(0f);
+            }
+            menu.m_panelLineSize = menu.m_panelCenterList.Count;
+        }
+
         // Each plate sits on its row's ring: localPosition (sin a, 0, cos a) * dist, localRotation yaw a,
         // where vanilla uses a = column * 360 / columns and spins the row's parent to scroll left/right.
         private static bool SetPanelPosition_Pre(RoundMenu __instance, int line, int column, ref float dist)

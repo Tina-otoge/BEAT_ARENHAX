@@ -33,6 +33,7 @@ namespace BeatArenhax
 
         internal static void StopAllCustomAudio()
         {
+            StageVideoPatches.Stop();
             SongWheelTouchPatches.Forget();
             if (Plugin.Audio == null) return;
             Plugin.Audio.Mixer.StopSong();
@@ -79,7 +80,7 @@ namespace BeatArenhax
                 if (cueName == FakeBgm)
                 {
                     CustomSong song = Patches.CurrentDrumSong();
-                    if (song != null && Plugin.Audio.ArmedSong != song) _ = Plugin.Audio.Arm(song, 1);
+                    if (song != null) _ = Plugin.Audio.ArmSelectedChart(song, CustomScorePatches.SelectedIndex(song));
                     _ = Plugin.Audio.StartSong(volume);
                     __result = MakeFake(FakeBgm, (long)(Plugin.Audio.ArmedChart?.LengthMs ?? 0));
                     Started(startCallback);
@@ -165,6 +166,7 @@ namespace BeatArenhax
         {
             if (proc != Bvr.Player.Proc.Begin || Patches.CurrentSong() == null) return;
             Plugin.L.LogInfo("Custom song finished, showing results");
+            StageVideoPatches.Stop();
             Plugin.Audio?.Mixer.StopSong();
             Plugin.Audio?.ReleaseArmedChart();
         }

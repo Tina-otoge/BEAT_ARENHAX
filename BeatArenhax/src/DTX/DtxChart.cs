@@ -27,7 +27,7 @@ namespace BeatArenhax.DTX
         public string Value;
     }
 
-    /// <summary>Parsed DTX (DTXMania) chart. Only what is needed for drums + audio.</summary>
+    /// <summary>Parsed DTX (DTXMania) chart for drums, audio and stage videos.</summary>
     public sealed class DtxChart
     {
         private static readonly HashSet<string> KnownDirectives = new(StringComparer.OrdinalIgnoreCase)
@@ -48,6 +48,7 @@ namespace BeatArenhax.DTX
         public double BaseBpm;
         public string PathWav = "";
         public readonly Dictionary<int, DtxWav> Wavs = [];
+        public readonly Dictionary<int, string> Videos = [];
         public readonly Dictionary<int, double> BpmDefs = [];
         public readonly Dictionary<int, double> StopDefs = [];
         public readonly Dictionary<int, double> MeasureLength = [];
@@ -185,7 +186,16 @@ namespace BeatArenhax.DTX
                 }
                 if (headerOnly) continue;
 
-                if (key.Length == 5 && (key.StartsWith("BMP") || key.StartsWith("AVI") || key.StartsWith("BGA")))
+                if ((key.Length == 5 && key.StartsWith("AVI")) || (key.Length == 7 && key.StartsWith("VIDEO")))
+                {
+                    int id = Base36(key, key.Length - 2);
+                    if (id > 0)
+                    {
+                        chart.Videos[id] = StripComment(value);
+                        chart.VisualAssets[key] = StripComment(value);
+                    }
+                }
+                else if (key.Length == 5 && (key.StartsWith("BMP") || key.StartsWith("BGA")))
                 {
                     int id = Base36(key, 3);
                     if (id > 0) chart.VisualAssets[key] = StripComment(value);
@@ -234,6 +244,9 @@ namespace BeatArenhax.DTX
             // Old charts use a 1-10 scale.
             if (chart.DLevel is > 0 and <= 10)
                 chart.DLevel *= 10;
+            // Three-digit DTX levels use hundredths; keep the internal 0-100 scale.
+            else if (chart.DLevel is >= 100 and < 1000)
+                chart.DLevel /= 10;
             return chart;
         }
 

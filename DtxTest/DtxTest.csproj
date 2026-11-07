@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="..\BeatArenhax\src\**\*.cs"
       Exclude="..\BeatArenhax\src\Patches\**\*.cs;..\BeatArenhax\src\Images\**\*.cs;..\BeatArenhax\src\Plugin.cs" />
+    <Compile Include="..\BeatArenhax\src\Patches\Colors.cs" />
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="NVorbis" Version="0.10.5" />

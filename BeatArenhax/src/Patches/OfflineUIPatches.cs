@@ -12,25 +12,36 @@ namespace BeatArenhax
 
         private static bool _loggedSearch;
         private static bool _loggedFollowing;
+        private static bool _loggedFavorite;
+        private static bool _loggedLocalPlayData;
 
         internal static void Apply(Harmony h)
         {
             Patches.Patch(h, typeof(OfflineUIPatches), typeof(MusicInfoPlate), nameof(MusicInfoPlate.Open), null, nameof(MusicInfoPlate_Post));
             Patches.Patch(h, typeof(OfflineUIPatches), typeof(MusicInfoPlate), "SetMusicInfo", null, nameof(MusicInfoPlate_Post));
             Patches.Patch(h, typeof(OfflineUIPatches), typeof(HomeSystemMenu), nameof(HomeSystemMenu.Open), nameof(HomeSystemMenuOpen_Pre));
+            Patches.Patch(h, typeof(OfflineUIPatches), typeof(GameInfoManager), nameof(GameInfoManager.CheckOnce), nameof(CheckOfflinePlayData_Pre));
         }
 
         private static bool Active
         {
+            get => Plugin.Settings.HideButtonsUnavailableOffline && IsOffline;
+        }
+
+        private static bool IsOffline
+        {
             get
             {
-                if (!Plugin.Settings.HideButtonsUnavailableOffline) return false;
                 try
                 {
                     GameInfoManager info = GameInfoManager.GetInstance();
                     return info != null && info.IsOffline;
                 }
-                catch { return false; }
+                catch (Exception e)
+                {
+                    Plugin.L.LogWarning("Checking offline mode failed: " + e.Message);
+                    return false;
+                }
             }
         }
 
@@ -68,9 +79,24 @@ namespace BeatArenhax
                 UIListView list = __instance.m_SystemMenuView;
                 if (list == null || list.m_isBtnsDisplay == null) return;
                 list.SetButtonDisplay((int)HomeSystemMenu.Menu.Friend, false);
+                list.SetButtonDisplay((int)HomeSystemMenu.Menu.PlayDataFavorite, false);
                 if (!_loggedFollowing) { _loggedFollowing = true; Plugin.L.LogInfo("Offline: hid the following menu button"); }
+                if (!_loggedFavorite) { _loggedFavorite = true; Plugin.L.LogInfo("Offline: hid the favorite play data menu button"); }
             }
-            catch (Exception e) { Plugin.L.LogWarning("Hiding the following menu button failed: " + e.Message); }
+            catch (Exception e) { Plugin.L.LogWarning("Hiding offline-only menu buttons failed: " + e.Message); }
+        }
+
+        private static bool CheckOfflinePlayData_Pre(GameInfoManager.OnceLabel type, ref bool __result)
+        {
+            if (type != GameInfoManager.OnceLabel.OfflineReplayManagerDownload || !IsOffline) return true;
+
+            __result = true;
+            if (!_loggedLocalPlayData)
+            {
+                _loggedLocalPlayData = true;
+                Plugin.L.LogInfo("Offline: skipping the local play data notice");
+            }
+            return false;
         }
     }
 }

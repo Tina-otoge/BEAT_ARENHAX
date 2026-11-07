@@ -25,6 +25,12 @@ namespace BeatArenhax.CustomSongs
         public bool FromNote;
     }
 
+    public sealed class ScheduledVideo
+    {
+        public double TimeMs;
+        public string Path;
+    }
+
     public sealed class ChartNote
     {
         public int Tick;
@@ -41,6 +47,7 @@ namespace BeatArenhax.CustomSongs
         public DtxChart Source;
         public byte[] Midi;
         public List<ScheduledSound> Schedule = [];
+        public List<ScheduledVideo> Videos = [];
         public List<ChartNote> Notes = [];
         public double LengthMs;
         public int PlayableCount;
@@ -63,15 +70,17 @@ namespace BeatArenhax.CustomSongs
 
         public static int ToGameLevel(double dlevel) => dlevel <= 0 ? 3 : Math.Clamp((int)Math.Round((dlevel + 10) / 20.0), 1, 5);
 
-        private static GameLane MapChannel(int channel, bool rideOnRightCymbal) => channel switch
+        private GameLane MapChannel(int channel) => channel switch
         {
+            0x13 => _settings.RightPedal.Enabled ? GameLane.BD : GameLane.None,
+            0x1B or 0x1C => _settings.LeftPedal.Enabled ? GameLane.LP : GameLane.None,
             0x11 or 0x18 => GameLane.HH,
             0x12 => GameLane.SD,
             0x14 => GameLane.HT,
             0x15 => GameLane.LT,
             0x17 => GameLane.FT,
             0x16 => GameLane.RC,
-            0x19 => rideOnRightCymbal ? GameLane.RC : GameLane.None,
+            0x19 => _settings.RideOnRightCymbal ? GameLane.RC : GameLane.None,
             0x1A => GameLane.LC,
             _ => GameLane.None,
         };
@@ -123,6 +132,17 @@ namespace BeatArenhax.CustomSongs
             List<ChartNote> notes = [];
             foreach (DtxChip chip in chart.Chips)
             {
+                if (chip.Channel is 0x54 or 0x5A)
+                {
+                    if (_settings.LoadVideos)
+                    {
+                        string path = chart.Videos.TryGetValue(chip.Value, out string file) ? chart.ResolveFile(file, false) : null;
+                        if (path == null)
+                            result.Warnings.Add($"DTX video {chip.Value} on channel {chip.Channel:X2} is undefined or missing: {file}");
+                        result.Videos.Add(new ScheduledVideo { TimeMs = timeline.TickToMs(TickOf(chip)), Path = path });
+                    }
+                    continue;
+                }
                 if (IsAutoSoundChannel(chip.Channel))
                 {
                     int tick = TickOf(chip);
@@ -142,7 +162,7 @@ namespace BeatArenhax.CustomSongs
                     continue;
                 }
                 int noteTick = TickOf(chip);
-                GameLane lane = MapChannel(chip.Channel, _settings.RideOnRightCymbal);
+                GameLane lane = MapChannel(chip.Channel);
                 ChartNote note = new()
                 {
                     Tick = noteTick,
@@ -167,6 +187,7 @@ namespace BeatArenhax.CustomSongs
                 result.Schedule.Add(new ScheduledSound { TimeMs = note.TimeMs, WavId = note.WavId, FromNote = true });
             }
             result.Schedule.Sort((left, right) => left.TimeMs.CompareTo(right.TimeMs));
+            result.Videos.Sort((left, right) => left.TimeMs.CompareTo(right.TimeMs));
 
             double lastNoteMs = 0;
             foreach (ChartNote note in notes) lastNoteMs = Math.Max(lastNoteMs, note.TimeMs);

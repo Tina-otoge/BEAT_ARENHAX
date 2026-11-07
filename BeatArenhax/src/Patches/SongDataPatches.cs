@@ -12,8 +12,11 @@ namespace BeatArenhax
         private static bool _injected;
         private static string _lastChartName;
         private static MusicInfo _templateInfo;
+        private static readonly List<MusicInfo> _templates = [];
+        private static int _preparedSongId = -1;
+        private static bool _legacyStarting;
 
-        internal static string TemplateCue => Plugin.Settings.TemplateSong;
+        internal static string TemplateCue => _templateInfo != null ? _templateInfo.CueSheetName : Plugin.Settings.TemplateSong;
 
         internal static void Apply(Harmony h)
         {
@@ -23,6 +26,11 @@ namespace BeatArenhax
             Patches.Patch(h, typeof(SongDataPatches), typeof(TextAsset), "get_bytes", null, nameof(TextAsset_Bytes_Post));
             Patches.Patch(h, typeof(SongDataPatches), typeof(TextAsset), "get_text", null, nameof(TextAsset_Text_Post));
             Patches.Patch(h, typeof(SongDataPatches), typeof(MusicInfoManager), nameof(MusicInfoManager.GetAllMusicListSize), null, nameof(GetAllMusicListSize_Post));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(HomeMain), "GameStart", nameof(HomeGameStart_Pre));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(MusicSelectLegacy), "GameStart", nameof(LegacyGameStart_Pre), null, nameof(LegacyGameStart_Finalizer));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(Bvr.SubSceneManager), nameof(Bvr.SubSceneManager.LoadScene), nameof(LoadScene_Pre), nameof(LoadScene_Post));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(LyricsDisplayer), "Start", nameof(LyricsStart_Pre), null, nameof(LyricsStart_Finalizer));
+            Patches.Patch(h, typeof(SongDataPatches), typeof(LyricsDisplayer), nameof(LyricsDisplayer.SetActiveLyrics), nameof(SetActiveLyrics_Pre));
         }
 
         private static int _vanillaSongCount = -1;
@@ -57,19 +65,21 @@ namespace BeatArenhax
                 if (list == null || list.Count == 0) return;
 
                 MusicInfo template = null, fallback = null;
+                bool randomTemplate = string.IsNullOrWhiteSpace(Plugin.Settings.TemplateSong);
                 HashSet<int> existingIds = [];
+                _templates.Clear();
                 for (int i = 0; i < list.Count; i++)
                 {
                     MusicInfo musicInfo = list[i];
                     _ = existingIds.Add(musicInfo.Id);
                     if (musicInfo.CueSheetName == TemplateCue) template = musicInfo;
                     if (fallback == null && musicInfo.Instrumental == 1 && musicInfo.Id < 8000) fallback = musicInfo;
+                    if (musicInfo.Id >= 0 && musicInfo.Id < 8000 && !string.IsNullOrWhiteSpace(musicInfo.CueSheetName)) _templates.Add(musicInfo);
                 }
                 if (template == null)
                 {
-                    Plugin.L.LogWarning($"Template song '{TemplateCue}' not found, using '{fallback?.CueSheetName}'");
                     template = fallback ?? list[0];
-                    Plugin.Settings.TemplateSong = template.CueSheetName;
+                    if (!randomTemplate) Plugin.L.LogWarning($"Template song '{TemplateCue}' not found, using '{template.CueSheetName}'");
                 }
                 _templateInfo = template;
                 _vanillaSongCount = list.Count;
@@ -117,7 +127,88 @@ namespace BeatArenhax
 
         private static void GetDefaultReplayID_Pre(ref int musicID)
         {
+            if (_legacyStarting && Patches.SongById(musicID) != null && _preparedSongId != musicID)
+                PrepareTemplate(musicID);
             if (Patches.SongById(musicID) != null && _templateInfo != null) musicID = _templateInfo.Id;
+        }
+
+        private static void HomeGameStart_Pre()
+        {
+            PlayerInfoManager player = PlayerInfoManager.GetInstance();
+            if (player != null && Patches.SongById(player.CurrentMusicID) != null) PrepareTemplate(player.CurrentMusicID);
+        }
+
+        private static void LegacyGameStart_Pre() => _legacyStarting = true;
+        private static void LegacyGameStart_Finalizer() => _legacyStarting = false;
+
+        private static void LoadScene_Pre(Bvr.SceneID sceneID, out bool __state)
+        {
+            __state = false;
+            if (Bvr.SubSceneManager.IsChanging || sceneID < Bvr.SceneID.GuitarGameScene || sceneID > Bvr.SceneID.NostalgiaGameScene)
+                return;
+            PlayerInfoManager player = PlayerInfoManager.GetInstance();
+            if (player == null || Patches.SongById(player.CurrentMusicID) == null) return;
+            __state = true;
+            if (_preparedSongId == player.CurrentMusicID) return;
+
+            MusicInfo previous = _templateInfo;
+            PrepareTemplate(player.CurrentMusicID);
+            if (previous == null || previous.Id == _templateInfo.Id) return;
+            ReplayDataManager replayManager = ReplayDataManager.Instance;
+            if (replayManager == null || replayManager.replayIdArray == null) return;
+            GameInfoManager gameInfo = GameInfoManager.GetInstance();
+            for (int slot = 0; slot < replayManager.replayIdArray.Length; slot++)
+            {
+                int previousId = gameInfo.GetDefaultReplayID(previous.Id, slot);
+                if (replayManager.replayIdArray[slot] == previousId)
+                    replayManager.replayIdArray[slot] = gameInfo.GetDefaultReplayID(_templateInfo.Id, slot);
+            }
+        }
+
+        private static void LoadScene_Post(bool __state, bool __result)
+        {
+            if (__state && __result) _preparedSongId = -1;
+        }
+
+        private static void PrepareTemplate(int songId)
+        {
+            if (_templateInfo == null || !string.IsNullOrWhiteSpace(Plugin.Settings.TemplateSong))
+            {
+                _preparedSongId = songId;
+                return;
+            }
+            MusicInfo info = MusicInfoManager.GetInstance().GetMusicInfoByID(songId);
+            if (info == null) throw new InvalidOperationException($"Custom music info {songId} not found.");
+            List<MusicInfo> compatible = _templates.FindAll(candidate => TemplateSelection.Compatible(candidate.Id,
+                candidate.CueSheetName, (int)candidate.DataType, (int)candidate.ThirdPlayType,
+                (int)info.DataType, (int)info.ThirdPlayType));
+            MusicInfo selected = compatible[TemplateSelection.ChooseIndex(compatible.Count, System.Random.Shared.Next)];
+            info._CueSheetName_k__BackingField = selected.CueSheetName;
+            info._Instrumental_k__BackingField = selected.Instrumental;
+            _templateInfo = selected;
+            _preparedSongId = songId;
+            Plugin.L.LogInfo($"Custom song {songId} uses random performance template '{selected.CueSheetName}'");
+        }
+
+        private static void LyricsStart_Pre(out MusicInfo __state)
+        {
+            __state = null;
+            PlayerInfoManager player = PlayerInfoManager.GetInstance();
+            if (player == null || Patches.SongById(player.CurrentMusicID) == null) return;
+            MusicInfo info = player.CurrentMusicInfo();
+            if (info == null || info.Instrumental != 0) return;
+            __state = info;
+            info._Instrumental_k__BackingField = 1;
+        }
+
+        private static void LyricsStart_Finalizer(MusicInfo __state)
+        {
+            if (__state != null) __state._Instrumental_k__BackingField = 0;
+        }
+
+        private static void SetActiveLyrics_Pre(ref bool isActive)
+        {
+            if (Patches.CurrentSong() != null) isActive = false;
         }
 
         private static bool SubmitScore_Pre()
@@ -132,23 +223,22 @@ namespace BeatArenhax
             if (Plugin.Audio == null || Plugin.Library.Songs.Count == 0) return;
             string name;
             try { name = __instance.name; } catch { return; }
-            int difficulty;
-            if (name == TemplateCue + "_dr0") difficulty = 0;
-            else if (name == TemplateCue + "_dr1") difficulty = 1;
-            else return;
+            if (name != TemplateCue + "_dr0" && name != TemplateCue + "_dr1") return;
             CustomSong song = Patches.CurrentDrumSong();
             if (song == null) return;
             try
             {
-                ConvertedChart chart = Plugin.Audio.Arm(song, difficulty);
+                int selected = CustomScorePatches.SelectedIndex(song);
+                ConvertedCustomChart converted = Plugin.Audio.ArmSelectedChart(song, selected);
+                ConvertedChart chart = converted.Chart;
                 __result = chart.Midi;
-                if (_lastChartName != song.Folder + difficulty)
+                if (_lastChartName != song.Folder + selected)
                 {
-                    _lastChartName = song.Folder + difficulty;
-                    Plugin.L.LogInfo($"Loaded custom chart '{song.Title}' ({(difficulty == 0 ? "Casual" : "Advanced")}): {chart.PlayableCount} notes, {chart.AutoCount} auto, {chart.LengthMs / 1000:0.0}s");
+                    _lastChartName = song.Folder + selected;
+                    Plugin.L.LogInfo($"Loaded custom chart '{song.Title}' ({converted.Definition.Label}, L{converted.Definition.SetIndex}): {chart.PlayableCount} notes, {chart.AutoCount} auto, {chart.LengthMs / 1000:0.0}s");
                 }
             }
-            catch (Exception e) { Plugin.L.LogError("Chart conversion failed for " + song.Folder + ": " + e); }
+            catch (Exception e) { Plugin.L.LogError("Chart conversion failed for " + song.Folder + ": " + e); throw; }
         }
 
         private static void TextAsset_Text_Post(TextAsset __instance, ref string __result)
@@ -159,8 +249,8 @@ namespace BeatArenhax
             if (name != TemplateCue + "_dr_param") return;
             CustomSong song = Patches.CurrentDrumSong();
             if (song == null) return;
-            try { __result = Plugin.Audio.GetConverted(song).ParamJson; }
-            catch (Exception e) { Plugin.L.LogError("Param generation failed for " + song.Folder + ": " + e); }
+            try { __result = Plugin.Audio.GetConvertedChart(song, CustomScorePatches.SelectedIndex(song)).ParamJson; }
+            catch (Exception e) { Plugin.L.LogError("Param generation failed for " + song.Folder + ": " + e); throw; }
         }
     }
 }

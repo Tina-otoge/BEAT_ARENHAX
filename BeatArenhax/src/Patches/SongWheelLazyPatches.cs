@@ -58,28 +58,40 @@ namespace BeatArenhax
             {
                 _prefab.SetActive(true);
                 _prefab = null;
-                // SetObjectList left the wheel root inactive; plates inside inactive rows stay asleep.
-                RoundMenu menu = __instance.m_musicListMenu;
-                Il2CppSystem.Collections.Generic.List<GameObject> rows = menu != null ? menu.m_panelCenterObjectList : null;
-                if (rows != null)
-                {
-                    for (int i = 0; i < rows.Count; i++)
-                    {
-                        GameObject row = rows[i];
-                        if (row != null) row.SetActive(false);
-                    }
-                }
-                Il2CppSystem.Collections.Generic.List<GameObject> plates = __instance.m_musicListObjects;
-                if (plates != null)
-                {
-                    for (int i = 0; i < plates.Count; i++)
-                    {
-                        GameObject plate = plates[i];
-                        if (plate != null) plate.SetActive(true);
-                    }
-                }
+                PrepareRows(__instance.m_musicListMenu, __instance.m_musicListObjects);
             }
             catch (Exception e) { Plugin.L.LogWarning("Song wheel lazy load: " + e.Message); }
+        }
+
+        internal static void Rebuild(Action rebuild)
+        {
+            bool previous = _building;
+            _building = previous || Plugin.Settings.LazySongWheel;
+            try { rebuild(); }
+            finally { _building = previous; }
+        }
+
+        internal static void PrepareRows(RoundMenu menu, Il2CppSystem.Collections.Generic.List<GameObject> plates)
+        {
+            if (!Plugin.Settings.LazySongWheel) return;
+            // SetObjectList left the wheel root inactive; plates inside inactive rows stay asleep.
+            Il2CppSystem.Collections.Generic.List<GameObject> rows = menu != null ? menu.m_panelCenterObjectList : null;
+            if (rows != null)
+            {
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    GameObject row = rows[i];
+                    if (row != null) row.SetActive(false);
+                }
+            }
+            if (plates != null)
+            {
+                for (int i = 0; i < plates.Count; i++)
+                {
+                    GameObject plate = plates[i];
+                    if (plate != null) plate.SetActive(true);
+                }
+            }
         }
 
         // Runs even if ReadyMusicPlateList threw: the prefab is a loaded asset, so leaving it inactive

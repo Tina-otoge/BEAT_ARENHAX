@@ -62,6 +62,11 @@ namespace BeatArenhax.Images
             byte[] file;
             try { file = File.ReadAllBytes(song.PreImagePath); }
             catch { return null; }
+            return DecodePixels(file);
+        }
+
+        internal static Pixels DecodePixels(byte[] file)
+        {
             byte[] rgba = PngDecoder.Decode(file, out int width, out int height);
             if (rgba == null) return null;
             int stride = width * 4;

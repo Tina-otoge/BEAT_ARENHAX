@@ -74,6 +74,19 @@ namespace BeatArenhax
         private static bool OnWantsToQuit()
         {
             L.LogWarning("Quit signal received; forcing exit if the game does not close.");
+            ScheduleForcedQuit();
+            return true;
+        }
+
+        internal static void QuitGame()
+        {
+            L.LogInfo("Quit requested from the lobby menu.");
+            ScheduleForcedQuit();
+            Application.Quit();
+        }
+
+        private static void ScheduleForcedQuit()
+        {
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1000);
@@ -87,7 +100,6 @@ namespace BeatArenhax
                     L.LogError("Could not force process exit: " + e.Message);
                 }
             });
-            return true;
         }
 
     }
@@ -96,6 +108,7 @@ namespace BeatArenhax
     {
         private float _titleSince = -1;
         private bool _debugStarted;
+        private bool _autoplayBeforeDebug;
         private string _lastScene;
 
 #pragma warning disable IDE0051 // Invoked by Unity.
@@ -115,8 +128,18 @@ namespace BeatArenhax
                     if (_lastScene != null)
                     {
                         AudioPatches.StopAllCustomAudio();
+                        if (Patches.DebugAutoplayActive && sn is "TitleScene" or "SelectMusicScene" or "LockerRoomScene")
+                        {
+                            Patches.DebugAutoplayActive = false;
+                            SequencePlayer.IsAutoPlay = _autoplayBeforeDebug;
+                            Plugin.L.LogInfo("Debug autoplay ended; normal score saving resumed.");
+                        }
                     }
                     _lastScene = sn;
+                    GameplayPanelPatches.Reset();
+                    SpectatorPatches.ResetScene();
+                    StoolPatches.Reset();
+                    PedalPatches.Reset();
                     Plugin.L.LogInfo("Scene: " + sn);
                     SongDataPatches.EnsureInjected();
                     // GameInfoManager must not be created by us during startup.
@@ -126,11 +149,36 @@ namespace BeatArenhax
             catch { }
             DebugAutoplay();
             DebugSelect();
+            FolderPickerPatches.Update();
+            ModSettingsMenuPatches.Update();
+            PedalPatches.Update();
             UpdateHubMonitorText();
         }
 
         private float _nextMonitorCheck;
         private HomeBackMonitor _monitor;
+
+#pragma warning disable IDE0051 // Invoked by Unity.
+        private void LateUpdate()
+        {
+            StoolPatches.Update();
+            GameplayPanelPatches.Update();
+            FastSlowPatches.Update();
+            VirtualScreenPatches.Update();
+            SpectatorPatches.Update();
+        }
+
+        private void OnGUI() => SpectatorPatches.Draw();
+
+        private void OnDestroy()
+        {
+            GameplayPanelPatches.Reset();
+            VirtualScreenPatches.Shutdown();
+            PedalPatches.Shutdown();
+            SpectatorPatches.Shutdown();
+            StoolPatches.Reset();
+        }
+#pragma warning restore IDE0051
 
         private void UpdateHubMonitorText()
         {
@@ -193,16 +241,16 @@ namespace BeatArenhax
                     case 2:
                         if (now < _selectAt) return;
                         MusicSelect sel = FindObjectOfType<MusicSelect>();
-                        if (sel.m_musicPlateList == null || sel.m_musicPlateList.Count == 0)
+                        if (sel.m_musicPlateList == null || sel.m_musicListMenu == null)
                         {
                             Plugin.L.LogInfo("BEAT_ARENHAX_DEBUG_SELECT: building the song wheel");
                             sel.ReadyMusicPlateList();
                         }
-                        Il2CppSystem.Collections.Generic.List<MusicInfo> list = MusicInfoManager.GetInstance().MusicList;
+                        Il2CppSystem.Collections.Generic.List<MusicPlateBase> list = sel.m_musicPlateList;
                         int index = -1;
                         for (int i = 0; i < list.Count; i++)
                         {
-                            CustomSong song = Plugin.Library.ById.TryGetValue(list[i].Id, out CustomSong customSong) ? customSong : null;
+                            CustomSong song = Plugin.Library.ById.TryGetValue(list[i].MusicID, out CustomSong customSong) ? customSong : null;
                             if (song == null || song.Folder.IndexOf(want, StringComparison.OrdinalIgnoreCase) < 0) continue;
                             index = i;
                             break;
@@ -246,14 +294,25 @@ namespace BeatArenhax
                 Difficulty difficulty = Environment.GetEnvironmentVariable("BEAT_ARENHAX_DEBUG_DIFF") == "0" ? Difficulty.Basic : Difficulty.Advanced;
                 playerInfo.CurrentDifficulty = difficulty;
                 playerInfo.CurrentPlayerSlot = info.GetPlayerSlot(PlayType.Drum);
+                _autoplayBeforeDebug = SequencePlayer.IsAutoPlay;
                 SequencePlayer.IsAutoPlay = true;
                 Patches.DebugAutoplayActive = true;
                 Plugin.L.LogInfo($"BEAT_ARENHAX_DEBUG_AUTOPLAY: starting '{song.Title}' ({song.Id}) {difficulty}, slot {playerInfo.CurrentPlayerSlot}, play type {playerInfo.CurrentPlayType}");
-                _ = Bvr.SubSceneManager.LoadScene(Bvr.SceneID.DrumGameScene);
+                if (!Bvr.SubSceneManager.LoadScene(Bvr.SceneID.DrumGameScene))
+                {
+                    Patches.DebugAutoplayActive = false;
+                    SequencePlayer.IsAutoPlay = _autoplayBeforeDebug;
+                    Plugin.L.LogError("BEAT_ARENHAX_DEBUG_AUTOPLAY: game scene failed to load.");
+                }
             }
             catch (Exception e)
             {
                 _debugStarted = true;
+                if (Patches.DebugAutoplayActive)
+                {
+                    Patches.DebugAutoplayActive = false;
+                    SequencePlayer.IsAutoPlay = _autoplayBeforeDebug;
+                }
                 Plugin.L.LogError("BEAT_ARENHAX_DEBUG_AUTOPLAY failed: " + e);
             }
         }

@@ -54,19 +54,30 @@ namespace BeatArenhax.Audio
         public ConvertedSong GetConverted(CustomSong song)
         {
             ConvertedSong converted = song.GetConverted(_s, DurationMs);
-            foreach (ConvertedChart chart in new[] { converted.Casual, converted.Advanced })
-            {
-                foreach (string warning in chart.Warnings)
-                {
-                    string key = song.RelativeFolder + "\n" + warning;
-                    lock (_warningLock)
-                    {
-                        if (!_loggedWarnings.Add(key)) continue;
-                    }
-                    _log("DTX " + song.Title + ": " + warning);
-                }
-            }
+            LogWarnings(song, converted.Casual);
+            LogWarnings(song, converted.Advanced);
             return converted;
+        }
+
+        public ConvertedCustomChart GetConvertedChart(CustomSong song, int visibleIndex)
+        {
+            ArgumentNullException.ThrowIfNull(song);
+            ConvertedCustomChart converted = song.GetConvertedChart(_s, DurationMs, visibleIndex);
+            LogWarnings(song, converted.Chart);
+            return converted;
+        }
+
+        private void LogWarnings(CustomSong song, ConvertedChart chart)
+        {
+            foreach (string warning in chart.Warnings)
+            {
+                string key = song.RelativeFolder + "\n" + warning;
+                lock (_warningLock)
+                {
+                    if (!_loggedWarnings.Add(key)) continue;
+                }
+                _log("DTX " + song.Title + ": " + warning);
+            }
         }
 
         private AudioBuffer GetBuffer(string path)
@@ -86,10 +97,10 @@ namespace BeatArenhax.Audio
         public void Prefetch(CustomSong song)
         {
             ConvertedSong converted = GetConverted(song);
-            PrefetchAudio(song, converted, null);
+            PrefetchAudio(song, [converted.Casual, converted.Advanced]);
         }
 
-        private void PrefetchAudio(CustomSong song, ConvertedSong converted, ConvertedChart selectedChart)
+        private void PrefetchAudio(CustomSong song, IEnumerable<ConvertedChart> charts)
         {
             lock (_lock)
             {
@@ -99,9 +110,6 @@ namespace BeatArenhax.Audio
                 foreach (string path in stalePaths) _ = _cache.Remove(path);
             }
 
-            ConvertedChart[] charts = selectedChart == null
-                ? [converted.Casual, converted.Advanced]
-                : [selectedChart];
             HashSet<string> paths = new(StringComparer.OrdinalIgnoreCase);
             foreach (ConvertedChart chart in charts)
             {
@@ -139,12 +147,23 @@ namespace BeatArenhax.Audio
         public ConvertedChart Arm(CustomSong song, int difficulty)
         {
             ConvertedSong converted = GetConverted(song);
-            ConvertedChart chart = converted.Get(difficulty);
+            return ArmChart(song, converted.Get(difficulty));
+        }
+
+        public ConvertedCustomChart ArmSelectedChart(CustomSong song, int visibleIndex)
+        {
+            ConvertedCustomChart converted = GetConvertedChart(song, visibleIndex);
+            ArmChart(song, converted.Chart);
+            return converted;
+        }
+
+        private ConvertedChart ArmChart(CustomSong song, ConvertedChart chart)
+        {
             if (ArmedSong == song && ArmedChart == chart) return chart;
             ArmedSong = song;
             ArmedChart = chart;
             _armedWavs = [];
-            PrefetchAudio(song, converted, chart);
+            PrefetchAudio(song, [chart]);
             return chart;
         }
 

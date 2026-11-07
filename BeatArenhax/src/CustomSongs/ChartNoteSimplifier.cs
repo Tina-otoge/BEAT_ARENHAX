@@ -8,10 +8,9 @@ namespace BeatArenhax.CustomSongs
     {
         public static void Simplify(List<ChartNote> notes, Settings settings, bool casual)
         {
-            int maxHits = settings.MaxSimultaneousHits;
-            int minimumGap = casual ? Math.Max(settings.MinNoteGapMs, settings.CasualMinNoteGapMs) : settings.MinNoteGapMs;
+            int minimumGap = casual ? Math.Max(settings.MinNoteGapMs, settings.BeginnerMinNoteGapMs) : settings.MinNoteGapMs;
 
-            if (casual && settings.CasualOnlyEighthNotes)
+            if (casual && settings.BeginnerOnlyEightNotes)
             {
                 foreach (ChartNote note in notes)
                 {
@@ -36,7 +35,6 @@ namespace BeatArenhax.CustomSongs
                 }
                 simultaneous.Sort((left, right) => Priority(right).CompareTo(Priority(left)));
 
-                int kept = 0;
                 foreach (ChartNote note in simultaneous)
                 {
                     if (usedLanes.Contains(note.Lane))
@@ -49,13 +47,7 @@ namespace BeatArenhax.CustomSongs
                             continue;
                         }
                     }
-                    if (kept >= maxHits)
-                    {
-                        note.Playable = false;
-                        continue;
-                    }
                     _ = usedLanes.Add(note.Lane);
-                    kept++;
                 }
                 start = end;
             }

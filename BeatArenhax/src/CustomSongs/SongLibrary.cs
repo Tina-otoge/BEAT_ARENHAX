@@ -14,6 +14,26 @@ namespace BeatArenhax.CustomSongs
         public string Label;
         public double DLevel;
         public int SetIndex;
+
+        public string GetDecimalLevelText() => (DLevel / 10).ToString("0.00", CultureInfo.InvariantCulture);
+
+        public string GetDifficultyTag(bool advanced)
+        {
+            foreach (string token in (Label ?? "").ToUpperInvariant().Split([' ', '_', '-', '.', '(', ')', '[', ']']))
+            {
+                string tag = token switch
+                {
+                    "BSC" or "BASIC" or "BEGINNER" => "BSC",
+                    "ADV" or "ADVANCED" => "ADV",
+                    "EXT" or "EXTREME" => "EXT",
+                    "MAS" or "MASTER" => "MAS",
+                    "INS" or "INSANE" => "INS",
+                    _ => null,
+                };
+                if (tag != null) return tag;
+            }
+            return advanced ? "ADV" : "BSC";
+        }
     }
 
     public sealed class ConvertedSong
@@ -26,11 +46,28 @@ namespace BeatArenhax.CustomSongs
         public ConvertedChart Get(int difficulty) => difficulty == 0 ? Casual : Advanced;
     }
 
+    public sealed class ConvertedCustomChart
+    {
+        public CustomSongChart Definition { get; init; }
+        public ConvertedChart Chart { get; init; }
+        public string ParamJson { get; init; }
+        public Dictionary<int, int> WavToNote { get; init; }
+    }
+
+    public sealed class FolderInfo
+    {
+        public string Name;
+        public string Directory;
+        public string PreImagePath;
+        public readonly List<int> SongIds = [];
+    }
+
     public sealed class CustomSong
     {
         public int Id;
         public string Folder;
         public string RelativeFolder;
+        public string DisplayFolderName;
         public string Title;
         public string Artist;
         public List<CustomSongChart> Charts = [];
@@ -44,6 +81,7 @@ namespace BeatArenhax.CustomSongs
         private readonly object _lock = new();
         private ConvertedSong _converted;
         private DtxChart _casualDtx, _advancedDtx;
+        private readonly Dictionary<(int SetIndex, bool Casual), ConvertedCustomChart> _convertedCharts = [];
 
         private DtxChart LoadDtxNoLock(bool advanced) => advanced
             ? (_advancedDtx ??= DtxChart.Load(AdvancedChart.Path))
@@ -73,9 +111,39 @@ namespace BeatArenhax.CustomSongs
             }
         }
 
+        public ConvertedCustomChart GetConvertedChart(Settings settings, Func<string, double> durationMs, int visibleIndex)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+            ArgumentNullException.ThrowIfNull(durationMs);
+            lock (_lock)
+            {
+                IReadOnlyList<CustomSongChart> visible = CustomChartSelection.Select(Charts, settings.DifficultiesCut);
+                if (visibleIndex < 0 || visibleIndex >= visible.Count)
+                    throw new ArgumentOutOfRangeException(nameof(visibleIndex), "No custom chart exists at this position.");
+                CustomSongChart definition = visible[visibleIndex];
+                bool casual = visibleIndex == 0;
+                var key = (definition.SetIndex, casual);
+                if (_convertedCharts.TryGetValue(key, out ConvertedCustomChart cached)) return cached;
+
+                ChartConverter converter = new(settings, durationMs);
+                ConvertedChart chart = converter.Prepare(DtxChart.Load(definition.Path), casual);
+                Dictionary<int, int> map = GameParamWriter.AssignNotes([chart.Notes]);
+                ChartConverter.Finish(chart, map);
+                ConvertedCustomChart result = new()
+                {
+                    Definition = definition,
+                    Chart = chart,
+                    WavToNote = map,
+                    ParamJson = GameParamWriter.BuildJson(map, chart.Notes),
+                };
+                _convertedCharts.Add(key, result);
+                return result;
+            }
+        }
+
         public void ReleaseConverted()
         {
-            lock (_lock) { _converted = null; _casualDtx = null; _advancedDtx = null; }
+            lock (_lock) { _converted = null; _casualDtx = null; _advancedDtx = null; _convertedCharts.Clear(); }
         }
     }
 
@@ -84,7 +152,10 @@ namespace BeatArenhax.CustomSongs
         public const int MaxId = 7999;
         public readonly List<CustomSong> Songs = [];
         public readonly Dictionary<int, CustomSong> ById = [];
+        public readonly List<FolderInfo> Folders = [];
         public readonly List<string> Warnings = [];
+        private readonly Dictionary<string, FolderInfo> _folderNames = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, FolderInfo> _foldersByName = new(StringComparer.OrdinalIgnoreCase);
 
         public static string ReadSetDefValue(string line, string key)
         {
@@ -96,6 +167,8 @@ namespace BeatArenhax.CustomSongs
         public void Scan(string root, Settings settings, string idFile)
         {
             Songs.Clear(); ById.Clear();
+            _folderNames.Clear();
+            Folders.Clear(); _foldersByName.Clear();
             if (!Directory.Exists(root))
             {
                 Warnings.Add("Song folder does not exist: " + root);
@@ -127,6 +200,8 @@ namespace BeatArenhax.CustomSongs
                     song.Id = id;
                     Songs.Add(song);
                     ById[id] = song;
+                    if (settings.DisplayFolderName || settings.DisplayFolderPicker)
+                        AddToFolder(GetFolder(root, song.Folder), song);
                 }
                 catch (Exception e)
                 {
@@ -134,6 +209,20 @@ namespace BeatArenhax.CustomSongs
                 }
             }
             if (idsChanged) SaveIds(idFile, ids);
+            Folders.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void AddToFolder(FolderInfo source, CustomSong song)
+        {
+            if (!_foldersByName.TryGetValue(source.Name, out FolderInfo folder))
+            {
+                folder = source;
+                _foldersByName[folder.Name] = folder;
+                Folders.Add(folder);
+            }
+            else if (folder.PreImagePath == null && source.PreImagePath != null)
+                folder.PreImagePath = source.PreImagePath;
+            folder.SongIds.Add(song.Id);
         }
 
         private static IEnumerable<string> SafeEnumerate(string root, string pattern)
@@ -204,12 +293,92 @@ namespace BeatArenhax.CustomSongs
                 : !string.IsNullOrWhiteSpace(firstHeader?.Title) ? firstHeader.Title
                 : Path.GetFileName(dir);
             song.Artist ??= "";
+            if (settings.DisplayFolderName) song.DisplayFolderName = GetFolder(root, dir).Name;
 
             song.CasualChart = Pick(song.Charts, settings.DifficultiesCut, false);
             song.AdvancedChart = Pick(song.Charts, settings.DifficultiesCut, true);
             song.AdvancedLevel = ChartConverter.ToGameLevel(song.AdvancedChart.DLevel);
             song.CasualLevel = Math.Min(song.AdvancedLevel, ChartConverter.ToGameLevel(song.CasualChart.DLevel));
             return song;
+        }
+
+        private FolderInfo GetFolder(string root, string songFolder)
+        {
+            DirectoryInfo scanRoot = new(Path.GetFullPath(root));
+            DirectoryInfo songDirectory = new(Path.GetFullPath(songFolder));
+            DirectoryInfo parent = songDirectory.Parent;
+            string cacheKey = songDirectory.FullName.Equals(scanRoot.FullName, StringComparison.OrdinalIgnoreCase)
+                ? songDirectory.FullName : parent?.FullName ?? songDirectory.FullName;
+            if (_folderNames.TryGetValue(cacheKey, out FolderInfo cached)) return cached;
+
+            string name = null;
+            string boxImage = null;
+            DirectoryInfo namedGroup = null;
+            DirectoryInfo group = songDirectory;
+            if (songDirectory.FullName.Equals(scanRoot.FullName, StringComparison.OrdinalIgnoreCase))
+                group = scanRoot;
+            else
+            {
+                for (DirectoryInfo ancestor = parent; ancestor != null; ancestor = ancestor.Parent)
+                {
+                    bool atRoot = ancestor.FullName.Equals(scanRoot.FullName, StringComparison.OrdinalIgnoreCase);
+                    if (name == null)
+                    {
+                        try
+                        {
+                            string box = Directory.GetFiles(ancestor.FullName)
+                                .FirstOrDefault(file => Path.GetFileName(file).Equals("box.def", StringComparison.OrdinalIgnoreCase));
+                            if (box != null)
+                            {
+                                string[] lines = DtxChart.ReadText(box).Split('\n');
+                                name = lines.Select(line => ReadSetDefValue(line.Trim(), "TITLE"))
+                                    .FirstOrDefault(title => !string.IsNullOrWhiteSpace(title));
+                                if (name != null)
+                                {
+                                    namedGroup = ancestor;
+                                    boxImage = lines.Select(line => ReadSetDefValue(line.Trim(), "PREIMAGE"))
+                                        .FirstOrDefault(image => !string.IsNullOrWhiteSpace(image));
+                                }
+                                if (name == null) Warnings.Add("No non-empty #TITLE in " + box + "; using the folder name.");
+                            }
+                        }
+                        catch (IOException e) { Warnings.Add("Reading folder metadata in " + ancestor.FullName + ": " + e.Message); }
+                        catch (UnauthorizedAccessException e) { Warnings.Add("Reading folder metadata in " + ancestor.FullName + ": " + e.Message); }
+                    }
+                    if (atRoot) break;
+                    group = ancestor;
+                }
+                if (scanRoot.Name.StartsWith("DTXFiles.", StringComparison.OrdinalIgnoreCase)) group = scanRoot;
+            }
+            name ??= group.Name.StartsWith("DTXFiles.", StringComparison.OrdinalIgnoreCase)
+                ? group.Name["DTXFiles.".Length..] : group.Name;
+            string directory = (namedGroup ?? group).FullName;
+            FolderInfo result = new() { Name = name, Directory = directory };
+            try
+            {
+                if (namedGroup == null)
+                {
+                    string box = Directory.GetFiles(directory)
+                        .FirstOrDefault(file => Path.GetFileName(file).Equals("box.def", StringComparison.OrdinalIgnoreCase));
+                    if (box != null) boxImage = DtxChart.ReadText(box).Split('\n')
+                        .Select(line => ReadSetDefValue(line.Trim(), "PREIMAGE"))
+                        .FirstOrDefault(image => !string.IsNullOrWhiteSpace(image));
+                }
+                string image = !string.IsNullOrWhiteSpace(boxImage)
+                    ? Path.GetFullPath(Path.Combine(directory, boxImage.Trim('"').Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)))
+                    : null;
+                if (image != null && File.Exists(image)) result.PreImagePath = image;
+                else
+                {
+                    if (image != null) Warnings.Add("Folder image does not exist: " + image + "; trying pre.png.");
+                    result.PreImagePath = Directory.GetFiles(directory)
+                        .FirstOrDefault(file => Path.GetFileName(file).Equals("pre.png", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+            catch (IOException e) { Warnings.Add("Reading folder image in " + directory + ": " + e.Message); }
+            catch (UnauthorizedAccessException e) { Warnings.Add("Reading folder image in " + directory + ": " + e.Message); }
+            _folderNames[cacheKey] = result;
+            return result;
         }
 
         private static CustomSongChart Pick(List<CustomSongChart> charts, ChartDifficultyCut cut, bool advanced)

@@ -69,16 +69,35 @@ namespace BeatArenhax.Audio
                 Mp3SampleProvider m = new(path);
                 return (m, m, m.TotalTime);
             }
-            // .wav (and anything else that is a RIFF wave)
-            WaveStream w = new WaveFileReader(path);
-            if (w.WaveFormat.Encoding is not WaveFormatEncoding.Pcm and not WaveFormatEncoding.IeeeFloat
-                and not WaveFormatEncoding.Extensible)
+            if (ext == ".xa")
             {
-                WaveFormat fmt = w.WaveFormat;
-                w.Dispose();
-                throw new NotSupportedException("Unsupported wave encoding " + fmt.Encoding);
+                using FileStream probe = File.OpenRead(path);
+                using BinaryReader reader = new(probe);
+                if (probe.Length < 4 || reader.ReadUInt32() != 0x46464952)
+                {
+                    XaSampleProvider xa = new(path);
+                    return (xa, xa, xa.TotalTime);
+                }
             }
-            return (w.ToSampleProvider(), w, w.TotalTime);
+            // .wav (and anything else that is a RIFF wave)
+            WaveFileReader w = new(path);
+            try
+            {
+                if (w.WaveFormat.Encoding == WaveFormatEncoding.Adpcm)
+                {
+                    AdpcmSampleProvider adpcm = new(w);
+                    return (adpcm, adpcm, adpcm.TotalTime);
+                }
+                if (w.WaveFormat.Encoding is not WaveFormatEncoding.Pcm and not WaveFormatEncoding.IeeeFloat
+                    and not WaveFormatEncoding.Extensible)
+                    throw new NotSupportedException("Unsupported wave encoding " + w.WaveFormat.Encoding);
+                return (w.ToSampleProvider(), w, w.TotalTime);
+            }
+            catch
+            {
+                w.Dispose();
+                throw;
+            }
         }
 
         public static double GetDurationMs(string path)
@@ -104,6 +123,8 @@ namespace BeatArenhax.Audio
                 {
                     if (owner is VorbisSampleProvider v) v.Seek(TimeSpan.FromSeconds(startSeconds));
                     else if (owner is Mp3SampleProvider mp) mp.Seek(TimeSpan.FromSeconds(startSeconds));
+                    else if (owner is XaSampleProvider xa) xa.Seek(TimeSpan.FromSeconds(startSeconds));
+                    else if (owner is AdpcmSampleProvider adpcm) adpcm.Seek(TimeSpan.FromSeconds(startSeconds));
                     else if (owner is WaveStream ws) ws.CurrentTime = TimeSpan.FromSeconds(Math.Min(startSeconds, ws.TotalTime.TotalSeconds));
                 }
                 ISampleProvider p = source;

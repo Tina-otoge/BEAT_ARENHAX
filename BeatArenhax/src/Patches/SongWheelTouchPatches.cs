@@ -43,6 +43,19 @@ namespace BeatArenhax
         }
 
         internal static bool Pending => _cue != null;
+        internal static void StopForFilter()
+        {
+            Stop();
+            foreach (MusicPlateBase plate in Plates.Values)
+            {
+                if (plate == null || plate.m_btnCollider == null) continue;
+                ButtonCollider collider = plate.m_btnCollider;
+                collider.StopAllCoroutines();
+                collider.isStartTouch = false;
+                collider.touchTimer = 0f;
+                collider.SetTouchFlag(false);
+            }
+        }
 
         /// <summary>
         /// Called from the PlayBgm hook: when the info plate starts the preview of the touched song, hand it the
